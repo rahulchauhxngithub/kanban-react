@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import "./App.css";
 import Column from "./Column.jsx";
 import Quote from "./Quote.jsx";
-
-const STORAGE_KEY = "kanban-react-tasks";
-const THEME_KEY = "kanban-react-theme";
+import ThemeToggle from "./ThemeToggle.jsx";
+import { useDebounce } from "./useDebounce.js";
+import { useLocalStorage } from "./useLocalStorage.js";
 
 const startTasks = [
   { id: 1, title: "Design the layout", status: "done", priority: "low" },
@@ -14,36 +14,21 @@ const startTasks = [
   { id: 5, title: "Add drag and drop", status: "todo", priority: "medium" }
 ];
 
-// Read from the drawer. If it is empty or broken, use the starter list.
-function loadTasks() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return Array.isArray(saved) ? saved : startTasks;
-  } catch {
-    return startTasks;
-  }
-}
-
 function App() {
-  const [tasks, setTasks] = useState(() => loadTasks());
+  // Behaves like useState, but is saved automatically
+  const [tasks, setTasks] = useLocalStorage(
+    "kanban-react-tasks",
+    startTasks,
+    Array.isArray
+  );
+
   const [title, setTitle] = useState("");
   const [newPriority, setNewPriority] = useState("medium");
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("all");
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem(THEME_KEY) || "light"
-  );
 
-  // Whenever tasks changes, copy it into the drawer
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-  }, [tasks]);
-
-  // Whenever theme changes: update the <body> class and save the choice
-  useEffect(() => {
-    document.body.classList.toggle("dark", theme === "dark");
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
+  // A delayed copy of the search text (updates 300ms after you stop typing)
+  const debouncedSearch = useDebounce(search, 300);
 
   function addTask(event) {
     event.preventDefault();
@@ -78,15 +63,19 @@ function App() {
     );
   }
 
-  // Worked out while drawing. Not stored in state.
-  const visibleTasks = tasks.filter(task =>
-    task.title.toLowerCase().includes(search.trim().toLowerCase()) &&
-    (priorityFilter === "all" || task.priority === priorityFilter)
-  );
+  // Filter and split into columns, only when something it uses changes
+  const tasksByStatus = useMemo(() => {
+    const visible = tasks.filter(task =>
+      task.title.toLowerCase().includes(debouncedSearch.trim().toLowerCase()) &&
+      (priorityFilter === "all" || task.priority === priorityFilter)
+    );
 
-  function tasksWithStatus(status) {
-    return visibleTasks.filter(task => task.status === status);
-  }
+    return {
+      todo: visible.filter(task => task.status === "todo"),
+      "in-progress": visible.filter(task => task.status === "in-progress"),
+      done: visible.filter(task => task.status === "done")
+    };
+  }, [tasks, debouncedSearch, priorityFilter]);
 
   return (
     <div>
@@ -132,14 +121,7 @@ function App() {
           <option value="high">High</option>
         </select>
 
-        <button
-          type="button"
-          className="theme-toggle"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          aria-label="Switch theme"
-        >
-          {theme === "dark" ? "☀️" : "🌙"}
-        </button>
+        <ThemeToggle />
       </header>
 
       <Quote />
@@ -148,7 +130,7 @@ function App() {
         <Column
           title="To Do"
           status="todo"
-          tasks={tasksWithStatus("todo")}
+          tasks={tasksByStatus.todo}
           onDelete={deleteTask}
           onMove={moveTask}
           onEdit={editTask}
@@ -156,7 +138,7 @@ function App() {
         <Column
           title="In Progress"
           status="in-progress"
-          tasks={tasksWithStatus("in-progress")}
+          tasks={tasksByStatus["in-progress"]}
           onDelete={deleteTask}
           onMove={moveTask}
           onEdit={editTask}
@@ -164,7 +146,7 @@ function App() {
         <Column
           title="Done"
           status="done"
-          tasks={tasksWithStatus("done")}
+          tasks={tasksByStatus.done}
           onDelete={deleteTask}
           onMove={moveTask}
           onEdit={editTask}

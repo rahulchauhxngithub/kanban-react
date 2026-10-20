@@ -26,7 +26,7 @@ function Quote() {
 
         // 3. Keep the quote (unless we were replaced)
         if (!ignore) setQuote(data);
-      } catch (err) {
+      } catch {
         // 4. Show an error
         if (!ignore) setError("Could not load a quote. Please try again.");
       } finally {
